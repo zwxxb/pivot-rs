@@ -64,6 +64,18 @@ pub async fn handle_local_to_remote_forward(
     let mut buf1 = vec![0u8; BUFFER_SIZE];
     let mut buf2 = vec![0u8; BUFFER_SIZE];
 
+    // handshake to keep the client address
+    // the unused packet may be sent to the real udp service (which will be forwarded)
+    if let Err(e) = remote_socket.send(&[0u8; 4]).await {
+        error!("Failed to handshake with remote address: {}", e);
+        return Err(e);
+    } else {
+        info!(
+            "Handshake with remote address {} success",
+            remote_socket.peer_addr().unwrap()
+        );
+    }
+
     let mut last_client_addr = None;
 
     loop {

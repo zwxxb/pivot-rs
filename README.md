@@ -12,9 +12,14 @@ cd rsproxy
 cargo build --release
 ```
 
+## Feature
+
+- TCP/UDP port forwarding (support multi network layer)
+- Socks5 proxy
+
 ## Usage
 
-### Port Forwarding
+### TCP Port Forwarding
 
 Listen on `0.0.0.0:8888` and `0.0.0.0:9999`, forward traffic between them.
 
@@ -67,6 +72,45 @@ A complex example, multi-layer proxy in the intranet.
 ```
 
 Note that the command on machine B need to be executed last. Because this mode will check the connectivity between the two remote addresses.
+
+### UDP Port Forwarding
+
+The usage of UDP port forwarding is similar to TCP, simply add `-u` flag.
+
+This feature may be unstable.
+
+Note that when using **reverse** UDP port forwarding, a handshake packet will be sent to keep the client address.
+
+Example:
+
+```bash
+# on attacker's machine
+./rsproxy fwd -l 8888 -l 9999
+
+# on victim's machine
+./rsproxy fwd -r 10.0.0.1:53 -r vps:8888
+```
+
+The victim's machine will send a handshake packet to `vps:8888`, which is the attacker's machine.
+
+The attacker's machine will remember the client address, and forward the traffic to it when user connects to `vps:9999`.
+
+**Because of the handshake packet, the parameters must be in order and cannot be swapped.**
+
+Another example:
+
+```bash
+# on machine A (10.0.0.1, 192.168.1.1, intranet)
+./rsproxy fwd -r 10.0.0.10:53 -l 7777
+
+# on machine B (192.168.1.2, DMZ)
+./rsproxy fwd -r 192.168.1.1:7777 -r vps:8888 # this command need to be executed last
+
+# on attacker's machine
+./rsproxy fwd -l 8888 -l 9999
+```
+
+The handshake packet will be sent from machine B to the attacker's machine (port 8888). Users can connect to the intranet through port 9999.
 
 ### Socks Proxy
 
