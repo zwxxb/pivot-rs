@@ -2,10 +2,13 @@
 name = "rsproxy"
 version = "0.1.0"
 edition = "2021"
+authors = ["X1r0z <i@exp10it.io"]
+repository = "https://github.com/X1r0z/rsproxy"
+description = "Rsproxy is a lightweight port-forwarding and socks proxy tool written in Rust 🦀"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.5.23", features = ["derive"] }
-serde = { version = "1.0.216", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
