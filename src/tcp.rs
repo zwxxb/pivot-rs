@@ -1,6 +1,9 @@
 use std::io::Result;
 
-use tokio::{net::TcpStream, select};
+use tokio::{
+    net::{TcpStream, UnixStream},
+    select,
+};
 use tracing::error;
 
 pub async fn handle_forward(mut stream1: TcpStream, mut stream2: TcpStream) -> Result<()> {
@@ -20,7 +23,36 @@ pub async fn handle_forward(mut stream1: TcpStream, mut stream2: TcpStream) -> R
     };
 
     select! {
-        _ = handle1 => { Ok(()) },
-        _ = handle2 => { Ok(()) },
+        _ = handle1 => {},
+        _ = handle2 => {},
     }
+
+    Ok(())
+}
+
+pub async fn handle_unix_socket_forward(
+    mut unix_stream: UnixStream,
+    mut tcp_stream: TcpStream,
+) -> Result<()> {
+    let (mut tcp_reader, mut tcp_writer) = tcp_stream.split();
+    let (mut unix_reader, mut unix_writer) = unix_stream.split();
+
+    let handle1 = async {
+        if let Err(e) = tokio::io::copy(&mut tcp_reader, &mut unix_writer).await {
+            error!("Failed to copy: {}", e);
+        }
+    };
+
+    let handle2 = async {
+        if let Err(e) = tokio::io::copy(&mut unix_reader, &mut tcp_writer).await {
+            error!("Failed to copy: {}", e);
+        }
+    };
+
+    select! {
+        _ = handle1 => {},
+        _ = handle2 => {},
+    }
+
+    Ok(())
 }

