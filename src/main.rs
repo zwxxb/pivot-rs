@@ -22,6 +22,10 @@ enum Commands {
         /// Remote connect address, format: IP:PORT
         #[arg(short, long)]
         remote: Vec<String>,
+
+        /// Enable UDP forward mode
+        #[arg(short, long)]
+        udp: bool,
     },
 
     /// Socks mode
@@ -42,9 +46,18 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Fwd { mut local, remote } => {
+        Commands::Fwd {
+            mut local,
+            remote,
+            udp,
+        } => {
             info!("Starting forward mode");
-            info!("Using TCP protocol");
+
+            if udp {
+                info!("Using UDP protocol");
+            } else {
+                info!("Using TCP protocol");
+            }
 
             for addr in &mut local {
                 if !addr.contains(":") {
@@ -52,7 +65,7 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let forward = Forward::new(local, remote);
+            let forward = Forward::new(local, remote, udp);
             forward.start().await?;
         }
         Commands::Socks { mut local, remote } => {
