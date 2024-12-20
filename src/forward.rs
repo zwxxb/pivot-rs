@@ -1,6 +1,6 @@
 use std::io::Result;
 
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, TcpStream, UdpSocket, UnixStream};
 use tracing::{error, info};
 
 use crate::{tcp, udp};
@@ -8,29 +8,42 @@ use crate::{tcp, udp};
 pub struct Forward {
     local_addrs: Vec<String>,
     remote_addrs: Vec<String>,
+    socket: Option<String>,
     udp: bool,
 }
 
 impl Forward {
-    pub fn new(local_addrs: Vec<String>, remote_addrs: Vec<String>, udp: bool) -> Self {
+    pub fn new(
+        local_addrs: Vec<String>,
+        remote_addrs: Vec<String>,
+        socket: Option<String>,
+        udp: bool,
+    ) -> Self {
         Self {
             local_addrs,
             remote_addrs,
+            socket,
             udp,
         }
     }
 
     pub async fn start(&self) -> Result<()> {
-        match (self.local_addrs.len(), self.remote_addrs.len()) {
-            (2, 0) => self.local_to_local().await?,
-            (1, 1) => self.local_to_remote().await?,
-            (0, 2) => self.remote_to_remote().await?,
+        match (
+            self.local_addrs.len(),
+            self.remote_addrs.len(),
+            &self.socket,
+        ) {
+            (2, 0, None) => self.local_to_local().await?,
+            (1, 1, None) => self.local_to_remote().await?,
+            (0, 2, None) => self.remote_to_remote().await?,
+            (1, 0, Some(_)) => self.socket_to_local_tcp().await?,
+            (0, 1, Some(_)) => self.socket_to_remote_tcp().await?,
             _ => error!("Invalid forward parameters"),
         }
         Ok(())
     }
 
-    pub async fn local_to_local(&self) -> Result<()> {
+    async fn local_to_local(&self) -> Result<()> {
         if self.udp {
             self.local_to_local_udp().await
         } else {
@@ -38,7 +51,7 @@ impl Forward {
         }
     }
 
-    pub async fn local_to_remote(&self) -> Result<()> {
+    async fn local_to_remote(&self) -> Result<()> {
         if self.udp {
             self.local_to_remote_udp().await
         } else {
@@ -46,7 +59,7 @@ impl Forward {
         }
     }
 
-    pub async fn remote_to_remote(&self) -> Result<()> {
+    async fn remote_to_remote(&self) -> Result<()> {
         if self.udp {
             self.remote_to_remote_udp().await
         } else {
@@ -104,6 +117,41 @@ impl Forward {
             info!("Connect to {} success", self.remote_addrs[1]);
 
             tcp::handle_forward(stream1, stream2).await?;
+        }
+    }
+
+    async fn socket_to_local_tcp(&self) -> Result<()> {
+        let socket_path = self.socket.as_ref().unwrap();
+
+        let local_listener = TcpListener::bind(&self.local_addrs[0]).await?;
+        info!("Bind to {} success", self.local_addrs[0]);
+
+        loop {
+            let (local_stream, addr) = local_listener.accept().await?;
+            let unix_stream = UnixStream::connect(socket_path).await?;
+
+            info!("Accept connection from {}", addr);
+            info!("Connect to {} success", socket_path);
+
+            tokio::spawn(async move {
+                if let Err(e) = tcp::handle_unix_socket_forward(unix_stream, local_stream).await {
+                    error!("Failed to forward: {}", e)
+                }
+            });
+        }
+    }
+
+    async fn socket_to_remote_tcp(&self) -> Result<()> {
+        let socket_path = self.socket.as_ref().unwrap();
+
+        loop {
+            let unix_stream = UnixStream::connect(socket_path).await?;
+            let remote_stream = TcpStream::connect(&self.remote_addrs[0]).await?;
+
+            info!("Connect to {} success", socket_path);
+            info!("Connect to {} success", self.remote_addrs[0]);
+
+            tcp::handle_unix_socket_forward(unix_stream, remote_stream).await?;
         }
     }
 

@@ -13,7 +13,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Forwarding mode
+    /// Port forwarding mode
     Fwd {
         /// Local listen address, format: [IP:]PORT
         #[arg(short, long)]
@@ -23,12 +23,16 @@ enum Commands {
         #[arg(short, long)]
         remote: Vec<String>,
 
+        /// Unix domain socket path
+        #[arg(short, long)]
+        socket: Option<String>,
+
         /// Enable UDP forward mode
         #[arg(short, long)]
         udp: bool,
     },
 
-    /// Socks mode
+    /// Socks proxy mode
     Socks {
         /// Local listen address, format: [IP:]PORT
         #[arg(short, long)]
@@ -49,6 +53,7 @@ async fn main() -> Result<()> {
         Commands::Fwd {
             mut local,
             remote,
+            socket,
             udp,
         } => {
             info!("Starting forward mode");
@@ -65,7 +70,7 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let forward = Forward::new(local, remote, udp);
+            let forward = Forward::new(local, remote, socket, udp);
             forward.start().await?;
         }
         Commands::Socks { mut local, remote } => {
