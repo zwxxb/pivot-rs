@@ -1,6 +1,7 @@
+use std::io::Result;
+
 use clap::Parser;
 use rsproxy::Cli;
-use std::io::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -104,9 +104,11 @@ impl Forward {
                 let stream1 = tcp::NetStream::from_acceptor(stream1, acceptor1).await;
                 let stream2 = tcp::NetStream::from_acceptor(stream2, acceptor2).await;
 
+                info!("Open pipe: {} <=> {}", addr1, addr2);
                 if let Err(e) = tcp::handle_forward(stream1, stream2).await {
                     error!("Failed to forward: {}", e)
                 }
+                info!("Close pipe: {} <=> {}", addr1, addr2);
             });
         }
     }
@@ -129,19 +131,23 @@ impl Forward {
             let (stream, addr) = listener.accept().await?;
             let remote = TcpStream::connect(&self.remote_addrs[0]).await?;
 
+            let peer_addr = remote.peer_addr()?;
+
             let acceptor = acceptor.clone();
             let connector = connector.clone();
 
             info!("Accept connection from {}", addr);
-            info!("Connect to {} success", remote.peer_addr()?);
+            info!("Connect to {} success", peer_addr);
 
             tokio::spawn(async move {
                 let stream = tcp::NetStream::from_acceptor(stream, acceptor).await;
                 let remote = tcp::NetStream::from_connector(remote, connector).await;
 
+                info!("Open pipe: {} <=> {}", addr, peer_addr);
                 if let Err(e) = tcp::handle_forward(stream, remote).await {
                     error!("failed to forward: {}", e)
                 }
+                info!("Close pipe: {} <=> {}", addr, peer_addr);
             });
         }
     }
@@ -161,8 +167,11 @@ impl Forward {
             let stream1 = TcpStream::connect(&self.remote_addrs[0]).await?;
             let stream2 = TcpStream::connect(&self.remote_addrs[1]).await?;
 
-            info!("Connect to {} success", stream1.peer_addr()?);
-            info!("Connect to {} success", stream2.peer_addr()?);
+            let peer_addr_1 = stream1.peer_addr()?;
+            let peer_addr_2 = stream2.peer_addr()?;
+
+            info!("Connect to {} success", peer_addr_1);
+            info!("Connect to {} success", peer_addr_2);
 
             let connector1 = connector1.clone();
             let connector2 = connector2.clone();
@@ -170,13 +179,13 @@ impl Forward {
             let stream1 = tcp::NetStream::from_connector(stream1, connector1).await;
             let stream2 = tcp::NetStream::from_connector(stream2, connector2).await;
 
+            info!("Open pipe: {} <=> {}", peer_addr_1, peer_addr_2);
             tcp::handle_forward(stream1, stream2).await?;
+            info!("Close pipe: {} <=> {}", peer_addr_1, peer_addr_2)
         }
     }
 
     async fn socket_to_local_tcp(&self) -> Result<()> {
-        let socket_path = self.socket.as_ref().unwrap();
-
         let local_listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Bind to {} success", local_listener.local_addr()?);
 
@@ -187,7 +196,15 @@ impl Forward {
 
         loop {
             let (local_stream, addr) = local_listener.accept().await?;
-            let unix_stream = UnixStream::connect(socket_path).await?;
+            let unix_stream = UnixStream::connect(self.socket.as_ref().unwrap()).await?;
+
+            let unix_addr = unix_stream.peer_addr()?;
+            let socket_path = unix_addr
+                .as_pathname()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
 
             info!("Accept connection from {}", addr);
             info!("Connect to {} success", socket_path);
@@ -198,34 +215,46 @@ impl Forward {
                 let local_stream = tcp::NetStream::from_acceptor(local_stream, acceptor).await;
                 let unix_stream = tcp::NetStream::Unix(unix_stream);
 
+                info!("Open pipe: {} <=> {}", socket_path, addr);
                 if let Err(e) = tcp::handle_forward(unix_stream, local_stream).await {
                     error!("Failed to forward: {}", e)
                 }
+                info!("Close pipe: {} <=> {}", socket_path, addr);
             });
         }
     }
 
     async fn socket_to_remote_tcp(&self) -> Result<()> {
-        let socket_path = self.socket.as_ref().unwrap();
-
         let connector = Arc::new(match self.remote_opts[0] {
             true => Some(crypto::get_tls_connector()),
             false => None,
         });
 
         loop {
-            let unix_stream = UnixStream::connect(socket_path).await?;
+            let unix_stream = UnixStream::connect(self.socket.as_ref().unwrap()).await?;
             let remote_stream = TcpStream::connect(&self.remote_addrs[0]).await?;
 
+            let peer_addr = remote_stream.peer_addr()?;
+            let unix_addr = unix_stream.peer_addr()?;
+
+            let socket_path = unix_addr
+                .as_pathname()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+
             info!("Connect to {} success", socket_path);
-            info!("Connect to {} success", remote_stream.peer_addr()?);
+            info!("Connect to {} success", peer_addr);
 
             let connector = connector.clone();
 
             let unix_stream = tcp::NetStream::Unix(unix_stream);
             let remote_stream = tcp::NetStream::from_connector(remote_stream, connector).await;
 
+            info!("Open pipe: {} <=> {}", socket_path, peer_addr);
             tcp::handle_forward(unix_stream, remote_stream).await?;
+            info!("Close pipe: {} <=> {}", socket_path, peer_addr);
         }
     }
 

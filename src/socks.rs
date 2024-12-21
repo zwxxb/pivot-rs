@@ -10,7 +10,7 @@ use crate::tcp::{self, NetStream};
 pub async fn handle_connection(stream: NetStream) -> Result<()> {
     let (mut reader, mut writer) = stream.split();
 
-    // 1. 认证协商
+    // 1. auth negotiation
     let mut buf = [0u8; 2];
     reader.read_exact(&mut buf).await?;
 
@@ -25,10 +25,10 @@ pub async fn handle_connection(stream: NetStream) -> Result<()> {
     let mut methods = vec![0u8; nmethods];
     reader.read_exact(&mut methods).await?;
 
-    // 不需要认证
+    // no auth needed
     writer.write_all(&[0x05, 0x00]).await?;
 
-    // 2. 请求处理
+    // 2. handle request
     let mut header = [0u8; 4];
     reader.read_exact(&mut header).await?;
 
@@ -63,7 +63,7 @@ pub async fn handle_connection(stream: NetStream) -> Result<()> {
             )
         }
         0x03 => {
-            // 域名
+            // domain
             let len = reader.read_u8().await? as usize;
             let mut domain = vec![0u8; len];
             reader.read_exact(&mut domain).await?;
@@ -89,7 +89,7 @@ pub async fn handle_connection(stream: NetStream) -> Result<()> {
         }
     };
 
-    // 3. 连接目标服务器
+    // 3. connect to the target server
     let target = NetStream::Tcp(match TcpStream::connect(&addr).await {
         Ok(stream) => stream,
         Err(e) => {
@@ -100,11 +100,11 @@ pub async fn handle_connection(stream: NetStream) -> Result<()> {
         }
     });
 
-    // 4. 发送连接成功响应
+    // 4. send success response
     writer
         .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
         .await?;
 
-    // 5. 转发数据
+    // 5. forward data
     tcp::handle_forward_splitted(reader, writer, target).await
 }
