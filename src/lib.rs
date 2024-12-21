@@ -1,3 +1,4 @@
+pub mod crypto;
 pub mod forward;
 pub mod proxy;
 pub mod socks;

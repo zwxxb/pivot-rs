@@ -1,9 +1,11 @@
-use std::io::Result;
+use std::{io::Result, sync::Arc};
 
+use rustls::pki_types::ServerName;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info};
 
 use crate::{
+    crypto,
     socks::handle_connection,
     tcp::{self},
 };
@@ -11,13 +13,22 @@ use crate::{
 pub struct Proxy {
     local_addrs: Vec<String>,
     remote_addr: Option<String>,
+    local_ssl_opts: Vec<bool>,
+    remote_ssl_opt: bool,
 }
 
 impl Proxy {
-    pub fn new(local_addrs: Vec<String>, remote_addr: Option<String>) -> Self {
+    pub fn new(
+        local_addrs: Vec<String>,
+        remote_addr: Option<String>,
+        local_ssl_opts: Vec<bool>,
+        remote_ssl_opt: bool,
+    ) -> Self {
         Self {
             local_addrs,
             remote_addr,
+            local_ssl_opts,
+            remote_ssl_opt,
         }
     }
 
@@ -34,13 +45,27 @@ impl Proxy {
 
     pub async fn socks_server(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.local_addrs[0]).await?;
-        info!("Start socks server on {}", self.local_addrs[0]);
+        info!("Start socks server on {}", listener.local_addr()?);
+
+        let acceptor = Arc::new(match self.local_ssl_opts[0] {
+            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
+            false => None,
+        });
 
         loop {
             let (stream, addr) = listener.accept().await?;
             info!("Accept connection from {}", addr);
 
-            tokio::spawn(async {
+            let acceptor = acceptor.clone();
+
+            tokio::spawn(async move {
+                let stream = match acceptor.as_ref() {
+                    Some(acceptor) => {
+                        tcp::NetStream::ServerTls(acceptor.accept(stream).await.unwrap())
+                    }
+                    None => tcp::NetStream::Tcp(stream),
+                };
+
                 if let Err(e) = handle_connection(stream).await {
                     error!("Failed to handle connection: {}", e);
                 }
@@ -51,12 +76,30 @@ impl Proxy {
     pub async fn socks_reverse_client(&self) -> Result<()> {
         let remote_addr = self.remote_addr.clone().unwrap();
 
+        let connector = Arc::new(match self.remote_ssl_opt {
+            true => Some(crypto::get_tls_connector()),
+            false => None,
+        });
+
+        let (host, _) = remote_addr.split_once(':').unwrap();
+        let domain = ServerName::try_from(host.to_string()).unwrap();
+
         loop {
             match TcpStream::connect(&remote_addr).await {
                 Ok(stream) => {
-                    info!("Connect to remote {} success", remote_addr);
+                    info!("Connect to remote {} success", stream.peer_addr()?);
+
+                    let connector = connector.clone();
+                    let domain = domain.clone();
 
                     tokio::spawn(async move {
+                        let stream = match connector.as_ref() {
+                            Some(connector) => tcp::NetStream::ClientTls(
+                                connector.connect(domain, stream).await.unwrap(),
+                            ),
+                            None => tcp::NetStream::Tcp(stream),
+                        };
+
                         if let Err(e) = handle_connection(stream).await {
                             error!("Failed to handle connection: {}", e);
                         }
@@ -74,6 +117,19 @@ impl Proxy {
         let control_listener = TcpListener::bind(&self.local_addrs[0]).await?;
         let proxy_listener = TcpListener::bind(&self.local_addrs[1]).await?;
 
+        info!("Bind to {} success", control_listener.local_addr()?);
+        info!("Bind to {} success", proxy_listener.local_addr()?);
+
+        let control_acceptor = Arc::new(match self.local_ssl_opts[0] {
+            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
+            false => None,
+        });
+
+        let proxy_acceptor = Arc::new(match self.local_ssl_opts[1] {
+            true => Some(crypto::get_tls_acceptor(&self.local_addrs[1])),
+            false => None,
+        });
+
         loop {
             let (proxy_stream, proxy_addr) = proxy_listener.accept().await?;
             let (control_stream, control_addr) = control_listener.accept().await?;
@@ -81,7 +137,24 @@ impl Proxy {
             info!("Accept connection from {}", proxy_addr);
             info!("Accept connection from {}", control_addr);
 
+            let proxy_acceptor = proxy_acceptor.clone();
+            let control_acceptor = control_acceptor.clone();
+
             tokio::spawn(async move {
+                let proxy_stream = match proxy_acceptor.as_ref() {
+                    Some(acceptor) => {
+                        tcp::NetStream::ServerTls(acceptor.accept(proxy_stream).await.unwrap())
+                    }
+                    None => tcp::NetStream::Tcp(proxy_stream),
+                };
+
+                let control_stream = match control_acceptor.as_ref() {
+                    Some(acceptor) => {
+                        tcp::NetStream::ServerTls(acceptor.accept(control_stream).await.unwrap())
+                    }
+                    None => tcp::NetStream::Tcp(control_stream),
+                };
+
                 if let Err(e) = tcp::handle_forward(proxy_stream, control_stream).await {
                     error!("Failed to handle forward: {}", e);
                 }

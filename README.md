@@ -17,6 +17,7 @@ cargo build --release
 - TCP/UDP port forwarding
 - Unix domain socket forwarding (e.g. `/var/run/docker.sock`)
 - Multi network layer support
+- TLS encryption support
 - Socks5 proxy
 
 ## Usage

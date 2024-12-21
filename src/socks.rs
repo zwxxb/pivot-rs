@@ -1,16 +1,20 @@
 use std::io::{Error, Result};
 
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
+    select,
 };
+use tracing::error;
 
-use crate::tcp::handle_forward;
+use crate::tcp::NetStream;
 
-pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
+pub async fn handle_connection(stream: NetStream) -> Result<()> {
+    let (mut reader, mut writer) = stream.split();
+
     // 1. 认证协商
     let mut buf = [0u8; 2];
-    stream.read_exact(&mut buf).await?;
+    reader.read_exact(&mut buf).await?;
 
     if buf[0] != 0x05 {
         return Err(Error::new(
@@ -21,14 +25,14 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
     let nmethods = buf[1] as usize;
     let mut methods = vec![0u8; nmethods];
-    stream.read_exact(&mut methods).await?;
+    reader.read_exact(&mut methods).await?;
 
     // 不需要认证
-    stream.write_all(&[0x05, 0x00]).await?;
+    writer.write_all(&[0x05, 0x00]).await?;
 
     // 2. 请求处理
     let mut header = [0u8; 4];
-    stream.read_exact(&mut header).await?;
+    reader.read_exact(&mut header).await?;
 
     if header[0] != 0x05 {
         return Err(Error::new(
@@ -48,9 +52,9 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
         0x01 => {
             // IPv4
             let mut addr = [0u8; 4];
-            stream.read_exact(&mut addr).await?;
+            reader.read_exact(&mut addr).await?;
             let mut port = [0u8; 2];
-            stream.read_exact(&mut port).await?;
+            reader.read_exact(&mut port).await?;
             format!(
                 "{}.{}.{}.{}:{}",
                 addr[0],
@@ -62,11 +66,11 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
         }
         0x03 => {
             // 域名
-            let len = stream.read_u8().await? as usize;
+            let len = reader.read_u8().await? as usize;
             let mut domain = vec![0u8; len];
-            stream.read_exact(&mut domain).await?;
+            reader.read_exact(&mut domain).await?;
             let mut port = [0u8; 2];
-            stream.read_exact(&mut port).await?;
+            reader.read_exact(&mut port).await?;
             format!(
                 "{}:{}",
                 String::from_utf8_lossy(&domain),
@@ -88,21 +92,48 @@ pub async fn handle_connection(mut stream: TcpStream) -> Result<()> {
     };
 
     // 3. 连接目标服务器
-    let target = match TcpStream::connect(&addr).await {
+    let target = NetStream::Tcp(match TcpStream::connect(&addr).await {
         Ok(stream) => stream,
         Err(e) => {
-            stream
+            writer
                 .write_all(&[0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                 .await?;
             return Err(e.into());
         }
-    };
+    });
 
     // 4. 发送连接成功响应
-    stream
+    writer
         .write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
         .await?;
 
     // 5. 转发数据
-    handle_forward(stream, target).await
+    handle_forward(reader, writer, target).await
+}
+
+pub async fn handle_forward(
+    mut r1: Box<dyn AsyncRead + Send + Unpin>,
+    mut w1: Box<dyn AsyncWrite + Send + Unpin>,
+    stream2: NetStream,
+) -> Result<()> {
+    let (mut r2, mut w2) = stream2.split();
+
+    let handle1 = async {
+        if let Err(e) = tokio::io::copy(&mut r1, &mut w2).await {
+            error!("Failed to copy: {}", e);
+        }
+    };
+
+    let handle2 = async {
+        if let Err(e) = tokio::io::copy(&mut r2, &mut w1).await {
+            error!("Failed to copy: {}", e);
+        }
+    };
+
+    select! {
+        _ = handle1 => {},
+        _ = handle2 => {},
+    }
+
+    Ok(())
 }
