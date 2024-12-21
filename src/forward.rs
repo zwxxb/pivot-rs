@@ -1,6 +1,5 @@
 use std::{io::Result, sync::Arc};
 
-use rustls::pki_types::ServerName;
 use tokio::net::{TcpListener, TcpStream, UdpSocket, UnixStream};
 use tracing::{error, info};
 
@@ -126,23 +125,19 @@ impl Forward {
             false => None,
         });
 
-        let (host, _) = &self.remote_addrs[0].split_once(':').unwrap();
-        let domain = ServerName::try_from(host.to_string()).unwrap();
-
         loop {
             let (stream, addr) = listener.accept().await?;
             let remote = TcpStream::connect(&self.remote_addrs[0]).await?;
 
             let acceptor = acceptor.clone();
             let connector = connector.clone();
-            let domain = domain.clone();
 
             info!("Accept connection from {}", addr);
             info!("Connect to {} success", remote.peer_addr()?);
 
             tokio::spawn(async move {
                 let stream = tcp::NetStream::from_acceptor(stream, acceptor).await;
-                let remote = tcp::NetStream::from_connector(remote, domain, connector).await;
+                let remote = tcp::NetStream::from_connector(remote, connector).await;
 
                 if let Err(e) = tcp::handle_forward(stream, remote).await {
                     error!("failed to forward: {}", e)
@@ -162,12 +157,6 @@ impl Forward {
             false => None,
         });
 
-        let (host1, _) = &self.remote_addrs[0].split_once(':').unwrap();
-        let domain1 = ServerName::try_from(host1.to_string()).unwrap();
-
-        let (host2, _) = &self.remote_addrs[1].split_once(':').unwrap();
-        let domain2 = ServerName::try_from(host2.to_string()).unwrap();
-
         loop {
             let stream1 = TcpStream::connect(&self.remote_addrs[0]).await?;
             let stream2 = TcpStream::connect(&self.remote_addrs[1]).await?;
@@ -177,11 +166,9 @@ impl Forward {
 
             let connector1 = connector1.clone();
             let connector2 = connector2.clone();
-            let domain1 = domain1.clone();
-            let domain2 = domain2.clone();
 
-            let stream1 = tcp::NetStream::from_connector(stream1, domain1, connector1).await;
-            let stream2 = tcp::NetStream::from_connector(stream2, domain2, connector2).await;
+            let stream1 = tcp::NetStream::from_connector(stream1, connector1).await;
+            let stream2 = tcp::NetStream::from_connector(stream2, connector2).await;
 
             tcp::handle_forward(stream1, stream2).await?;
         }
@@ -226,9 +213,6 @@ impl Forward {
             false => None,
         });
 
-        let (host, _) = &self.remote_addrs[0].split_once(':').unwrap();
-        let domain = ServerName::try_from(host.to_string()).unwrap();
-
         loop {
             let unix_stream = UnixStream::connect(socket_path).await?;
             let remote_stream = TcpStream::connect(&self.remote_addrs[0]).await?;
@@ -237,11 +221,9 @@ impl Forward {
             info!("Connect to {} success", remote_stream.peer_addr()?);
 
             let connector = connector.clone();
-            let domain = domain.clone();
 
             let unix_stream = tcp::NetStream::Unix(unix_stream);
-            let remote_stream =
-                tcp::NetStream::from_connector(remote_stream, domain, connector).await;
+            let remote_stream = tcp::NetStream::from_connector(remote_stream, connector).await;
 
             tcp::handle_forward(unix_stream, remote_stream).await?;
         }

@@ -26,13 +26,14 @@ impl NetStream {
         }
     }
 
-    pub async fn from_connector(
-        stream: TcpStream,
-        domain: ServerName<'static>,
-        connector: Arc<Option<TlsConnector>>,
-    ) -> Self {
+    pub async fn from_connector(stream: TcpStream, connector: Arc<Option<TlsConnector>>) -> Self {
         match connector.as_ref() {
-            Some(connector) => Self::ClientTls(connector.connect(domain, stream).await.unwrap()),
+            Some(connector) => Self::ClientTls(
+                connector
+                    .connect(ServerName::try_from("localhost").unwrap(), stream)
+                    .await
+                    .unwrap(),
+            ),
             None => Self::Tcp(stream),
         }
     }
