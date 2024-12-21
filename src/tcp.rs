@@ -1,12 +1,14 @@
 use std::io::Result;
+use std::sync::Arc;
 
+use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{
     io,
     net::{TcpStream, UnixStream},
     select,
 };
-use tokio_rustls::{client, server};
+use tokio_rustls::{client, server, TlsAcceptor, TlsConnector};
 use tracing::error;
 
 pub enum NetStream {
@@ -17,6 +19,24 @@ pub enum NetStream {
 }
 
 impl NetStream {
+    pub async fn from_acceptor(stream: TcpStream, acceptor: Arc<Option<TlsAcceptor>>) -> Self {
+        match acceptor.as_ref() {
+            Some(acceptor) => Self::ServerTls(acceptor.accept(stream).await.unwrap()),
+            None => Self::Tcp(stream),
+        }
+    }
+
+    pub async fn from_connector(
+        stream: TcpStream,
+        domain: ServerName<'static>,
+        connector: Arc<Option<TlsConnector>>,
+    ) -> Self {
+        match connector.as_ref() {
+            Some(connector) => Self::ClientTls(connector.connect(domain, stream).await.unwrap()),
+            None => Self::Tcp(stream),
+        }
+    }
+
     pub fn split(
         self,
     ) -> (
@@ -67,30 +87,3 @@ pub async fn handle_forward(stream1: NetStream, stream2: NetStream) -> Result<()
 
     Ok(())
 }
-
-// pub async fn handle_unix_socket_forward(
-//     mut unix_stream: UnixStream,
-//     mut tcp_stream: TcpStream,
-// ) -> Result<()> {
-//     let (mut tcp_reader, mut tcp_writer) = tcp_stream.split();
-//     let (mut unix_reader, mut unix_writer) = unix_stream.split();
-
-//     let handle1 = async {
-//         if let Err(e) = tokio::io::copy(&mut tcp_reader, &mut unix_writer).await {
-//             error!("Failed to copy: {}", e);
-//         }
-//     };
-
-//     let handle2 = async {
-//         if let Err(e) = tokio::io::copy(&mut unix_reader, &mut tcp_writer).await {
-//             error!("Failed to copy: {}", e);
-//         }
-//     };
-
-//     select! {
-//         _ = handle1 => {},
-//         _ = handle2 => {},
-//     }
-
-//     Ok(())
-// }

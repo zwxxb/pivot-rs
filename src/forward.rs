@@ -102,19 +102,8 @@ impl Forward {
             let acceptor2 = acceptor2.clone();
 
             tokio::spawn(async move {
-                let stream1 = match acceptor1.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(stream1).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(stream1),
-                };
-
-                let stream2 = match acceptor2.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(stream2).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(stream2),
-                };
+                let stream1 = tcp::NetStream::from_acceptor(stream1, acceptor1).await;
+                let stream2 = tcp::NetStream::from_acceptor(stream2, acceptor2).await;
 
                 if let Err(e) = tcp::handle_forward(stream1, stream2).await {
                     error!("Failed to forward: {}", e)
@@ -152,19 +141,8 @@ impl Forward {
             info!("Connect to {} success", remote.peer_addr()?);
 
             tokio::spawn(async move {
-                let stream = match acceptor.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(stream).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(stream),
-                };
-
-                let remote = match connector.as_ref() {
-                    Some(connector) => {
-                        tcp::NetStream::ClientTls(connector.connect(domain, remote).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(remote),
-                };
+                let stream = tcp::NetStream::from_acceptor(stream, acceptor).await;
+                let remote = tcp::NetStream::from_connector(remote, domain, connector).await;
 
                 if let Err(e) = tcp::handle_forward(stream, remote).await {
                     error!("failed to forward: {}", e)
@@ -174,15 +152,15 @@ impl Forward {
     }
 
     async fn remote_to_remote_tcp(&self) -> Result<()> {
-        let connector1 = match self.remote_ssl_opts[0] {
+        let connector1 = Arc::new(match self.remote_ssl_opts[0] {
             true => Some(crypto::get_tls_connector()),
             false => None,
-        };
+        });
 
-        let connector2 = match self.remote_ssl_opts[1] {
+        let connector2 = Arc::new(match self.remote_ssl_opts[1] {
             true => Some(crypto::get_tls_connector()),
             false => None,
-        };
+        });
 
         let (host1, _) = &self.remote_addrs[0].split_once(':').unwrap();
         let domain1 = ServerName::try_from(host1.to_string()).unwrap();
@@ -197,19 +175,13 @@ impl Forward {
             info!("Connect to {} success", stream1.peer_addr()?);
             info!("Connect to {} success", stream2.peer_addr()?);
 
-            let stream1 = match connector1.as_ref() {
-                Some(connector) => {
-                    tcp::NetStream::ClientTls(connector.connect(domain1.clone(), stream1).await?)
-                }
-                None => tcp::NetStream::Tcp(stream1),
-            };
+            let connector1 = connector1.clone();
+            let connector2 = connector2.clone();
+            let domain1 = domain1.clone();
+            let domain2 = domain2.clone();
 
-            let stream2 = match connector2.as_ref() {
-                Some(connector) => {
-                    tcp::NetStream::ClientTls(connector.connect(domain2.clone(), stream2).await?)
-                }
-                None => tcp::NetStream::Tcp(stream2),
-            };
+            let stream1 = tcp::NetStream::from_connector(stream1, domain1, connector1).await;
+            let stream2 = tcp::NetStream::from_connector(stream2, domain2, connector2).await;
 
             tcp::handle_forward(stream1, stream2).await?;
         }
@@ -236,12 +208,7 @@ impl Forward {
             let acceptor = acceptor.clone();
 
             tokio::spawn(async move {
-                let local_stream = match acceptor.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(local_stream).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(local_stream),
-                };
+                let local_stream = tcp::NetStream::from_acceptor(local_stream, acceptor).await;
                 let unix_stream = tcp::NetStream::Unix(unix_stream);
 
                 if let Err(e) = tcp::handle_forward(unix_stream, local_stream).await {
@@ -254,10 +221,10 @@ impl Forward {
     async fn socket_to_remote_tcp(&self) -> Result<()> {
         let socket_path = self.socket.as_ref().unwrap();
 
-        let connector = match self.remote_ssl_opts[0] {
+        let connector = Arc::new(match self.remote_ssl_opts[0] {
             true => Some(crypto::get_tls_connector()),
             false => None,
-        };
+        });
 
         let (host, _) = &self.remote_addrs[0].split_once(':').unwrap();
         let domain = ServerName::try_from(host.to_string()).unwrap();
@@ -269,13 +236,12 @@ impl Forward {
             info!("Connect to {} success", socket_path);
             info!("Connect to {} success", remote_stream.peer_addr()?);
 
+            let connector = connector.clone();
+            let domain = domain.clone();
+
             let unix_stream = tcp::NetStream::Unix(unix_stream);
-            let remote_stream = match connector.as_ref() {
-                Some(connector) => tcp::NetStream::ClientTls(
-                    connector.connect(domain.clone(), remote_stream).await?,
-                ),
-                None => tcp::NetStream::Tcp(remote_stream),
-            };
+            let remote_stream =
+                tcp::NetStream::from_connector(remote_stream, domain, connector).await;
 
             tcp::handle_forward(unix_stream, remote_stream).await?;
         }
