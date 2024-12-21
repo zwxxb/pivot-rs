@@ -13,22 +13,22 @@ use crate::{
 pub struct Proxy {
     local_addrs: Vec<String>,
     remote_addr: Option<String>,
-    local_ssl_opts: Vec<bool>,
-    remote_ssl_opt: bool,
+    local_opts: Vec<bool>,
+    remote_opt: bool,
 }
 
 impl Proxy {
     pub fn new(
         local_addrs: Vec<String>,
         remote_addr: Option<String>,
-        local_ssl_opts: Vec<bool>,
-        remote_ssl_opt: bool,
+        local_opts: Vec<bool>,
+        remote_opt: bool,
     ) -> Self {
         Self {
             local_addrs,
             remote_addr,
-            local_ssl_opts,
-            remote_ssl_opt,
+            local_opts,
+            remote_opt,
         }
     }
 
@@ -47,7 +47,7 @@ impl Proxy {
         let listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Start socks server on {}", listener.local_addr()?);
 
-        let acceptor = Arc::new(match self.local_ssl_opts[0] {
+        let acceptor = Arc::new(match self.local_opts[0] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
             false => None,
         });
@@ -76,7 +76,7 @@ impl Proxy {
     pub async fn socks_reverse_client(&self) -> Result<()> {
         let remote_addr = self.remote_addr.clone().unwrap();
 
-        let connector = Arc::new(match self.remote_ssl_opt {
+        let connector = Arc::new(match self.remote_opt {
             true => Some(crypto::get_tls_connector()),
             false => None,
         });
@@ -120,12 +120,12 @@ impl Proxy {
         info!("Bind to {} success", control_listener.local_addr()?);
         info!("Bind to {} success", proxy_listener.local_addr()?);
 
-        let control_acceptor = Arc::new(match self.local_ssl_opts[0] {
+        let control_acceptor = Arc::new(match self.local_opts[0] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
             false => None,
         });
 
-        let proxy_acceptor = Arc::new(match self.local_ssl_opts[1] {
+        let proxy_acceptor = Arc::new(match self.local_opts[1] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[1])),
             false => None,
         });

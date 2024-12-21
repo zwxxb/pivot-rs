@@ -11,24 +11,24 @@ pub struct Forward {
     remote_addrs: Vec<String>,
     socket: Option<String>,
     udp: bool,
-    local_ssl_opts: Vec<bool>,
-    remote_ssl_opts: Vec<bool>,
+    local_opts: Vec<bool>,
+    remote_opts: Vec<bool>,
 }
 
 impl Forward {
     pub fn new(
         local_addrs: Vec<String>,
         remote_addrs: Vec<String>,
-        local_ssl_opts: Vec<bool>,
-        remote_ssl_opts: Vec<bool>,
+        local_opts: Vec<bool>,
+        remote_opts: Vec<bool>,
         socket: Option<String>,
         udp: bool,
     ) -> Self {
         Self {
             local_addrs,
             remote_addrs,
-            local_ssl_opts,
-            remote_ssl_opts,
+            local_opts,
+            remote_opts,
             socket,
             udp,
         }
@@ -81,12 +81,12 @@ impl Forward {
         info!("Bind to {} success", listener1.local_addr()?);
         info!("Bind to {} success", listener1.local_addr()?);
 
-        let acceptor1 = Arc::new(match self.local_ssl_opts[0] {
+        let acceptor1 = Arc::new(match self.local_opts[0] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
             false => None,
         });
 
-        let acceptor2 = Arc::new(match self.local_ssl_opts[1] {
+        let acceptor2 = Arc::new(match self.local_opts[1] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[1])),
             false => None,
         });
@@ -116,12 +116,12 @@ impl Forward {
         let listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Bind to {} success", listener.local_addr()?);
 
-        let acceptor = Arc::new(match self.local_ssl_opts[0] {
+        let acceptor = Arc::new(match self.local_opts[0] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
             false => None,
         });
 
-        let connector = Arc::new(match self.remote_ssl_opts[0] {
+        let connector = Arc::new(match self.remote_opts[0] {
             true => Some(crypto::get_tls_connector()),
             false => None,
         });
@@ -152,12 +152,12 @@ impl Forward {
     }
 
     async fn remote_to_remote_tcp(&self) -> Result<()> {
-        let connector1 = Arc::new(match self.remote_ssl_opts[0] {
+        let connector1 = Arc::new(match self.remote_opts[0] {
             true => Some(crypto::get_tls_connector()),
             false => None,
         });
 
-        let connector2 = Arc::new(match self.remote_ssl_opts[1] {
+        let connector2 = Arc::new(match self.remote_opts[1] {
             true => Some(crypto::get_tls_connector()),
             false => None,
         });
@@ -193,7 +193,7 @@ impl Forward {
         let local_listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Bind to {} success", local_listener.local_addr()?);
 
-        let acceptor = Arc::new(match self.local_ssl_opts[0] {
+        let acceptor = Arc::new(match self.local_opts[0] {
             true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
             false => None,
         });
@@ -221,7 +221,7 @@ impl Forward {
     async fn socket_to_remote_tcp(&self) -> Result<()> {
         let socket_path = self.socket.as_ref().unwrap();
 
-        let connector = Arc::new(match self.remote_ssl_opts[0] {
+        let connector = Arc::new(match self.remote_opts[0] {
             true => Some(crypto::get_tls_connector()),
             false => None,
         });
