@@ -1,6 +1,5 @@
 use std::{io::Result, sync::Arc};
 
-use rustls::pki_types::ServerName;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info};
 
@@ -59,12 +58,7 @@ impl Proxy {
             let acceptor = acceptor.clone();
 
             tokio::spawn(async move {
-                let stream = match acceptor.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(stream).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(stream),
-                };
+                let stream = tcp::NetStream::from_acceptor(stream, acceptor).await;
 
                 if let Err(e) = handle_connection(stream).await {
                     error!("Failed to handle connection: {}", e);
@@ -81,24 +75,14 @@ impl Proxy {
             false => None,
         });
 
-        let (host, _) = remote_addr.split_once(':').unwrap();
-        let domain = ServerName::try_from(host.to_string()).unwrap();
-
         loop {
             match TcpStream::connect(&remote_addr).await {
                 Ok(stream) => {
                     info!("Connect to remote {} success", stream.peer_addr()?);
-
                     let connector = connector.clone();
-                    let domain = domain.clone();
 
                     tokio::spawn(async move {
-                        let stream = match connector.as_ref() {
-                            Some(connector) => tcp::NetStream::ClientTls(
-                                connector.connect(domain, stream).await.unwrap(),
-                            ),
-                            None => tcp::NetStream::Tcp(stream),
-                        };
+                        let stream = tcp::NetStream::from_connector(stream, connector).await;
 
                         if let Err(e) = handle_connection(stream).await {
                             error!("Failed to handle connection: {}", e);
@@ -141,19 +125,10 @@ impl Proxy {
             let control_acceptor = control_acceptor.clone();
 
             tokio::spawn(async move {
-                let proxy_stream = match proxy_acceptor.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(proxy_stream).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(proxy_stream),
-                };
-
-                let control_stream = match control_acceptor.as_ref() {
-                    Some(acceptor) => {
-                        tcp::NetStream::ServerTls(acceptor.accept(control_stream).await.unwrap())
-                    }
-                    None => tcp::NetStream::Tcp(control_stream),
-                };
+                let proxy_stream =
+                    tcp::NetStream::from_acceptor(proxy_stream, proxy_acceptor).await;
+                let control_stream =
+                    tcp::NetStream::from_acceptor(control_stream, control_acceptor).await;
 
                 if let Err(e) = tcp::handle_forward(proxy_stream, control_stream).await {
                     error!("Failed to handle forward: {}", e);

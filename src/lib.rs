@@ -86,6 +86,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             let mut remote_opt = false;
 
             load_opts(&mut local, &mut local_opts);
+            format_addrs(&mut local);
 
             let remote = match remote {
                 Some(remote) => Some(if remote.starts_with('+') {

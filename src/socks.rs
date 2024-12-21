@@ -1,13 +1,11 @@
 use std::io::{Error, Result};
 
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    select,
 };
-use tracing::error;
 
-use crate::tcp::NetStream;
+use crate::tcp::{self, NetStream};
 
 pub async fn handle_connection(stream: NetStream) -> Result<()> {
     let (mut reader, mut writer) = stream.split();
@@ -108,32 +106,5 @@ pub async fn handle_connection(stream: NetStream) -> Result<()> {
         .await?;
 
     // 5. 转发数据
-    handle_forward(reader, writer, target).await
-}
-
-pub async fn handle_forward(
-    mut r1: Box<dyn AsyncRead + Send + Unpin>,
-    mut w1: Box<dyn AsyncWrite + Send + Unpin>,
-    stream2: NetStream,
-) -> Result<()> {
-    let (mut r2, mut w2) = stream2.split();
-
-    let handle1 = async {
-        if let Err(e) = tokio::io::copy(&mut r1, &mut w2).await {
-            error!("Failed to copy: {}", e);
-        }
-    };
-
-    let handle2 = async {
-        if let Err(e) = tokio::io::copy(&mut r2, &mut w1).await {
-            error!("Failed to copy: {}", e);
-        }
-    };
-
-    select! {
-        _ = handle1 => {},
-        _ = handle2 => {},
-    }
-
-    Ok(())
+    tcp::handle_forward_splitted(reader, writer, target).await
 }

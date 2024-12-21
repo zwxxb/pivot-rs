@@ -66,7 +66,16 @@ impl NetStream {
 }
 
 pub async fn handle_forward(stream1: NetStream, stream2: NetStream) -> Result<()> {
-    let (mut r1, mut w1) = stream1.split();
+    let (r1, w1) = stream1.split();
+
+    handle_forward_splitted(r1, w1, stream2).await
+}
+
+pub async fn handle_forward_splitted(
+    mut r1: Box<dyn AsyncRead + Send + Unpin>,
+    mut w1: Box<dyn AsyncWrite + Send + Unpin>,
+    stream2: NetStream,
+) -> Result<()> {
     let (mut r2, mut w2) = stream2.split();
 
     let handle1 = async {
