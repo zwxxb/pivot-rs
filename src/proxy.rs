@@ -8,7 +8,7 @@ use tracing::{error, info};
 
 use crate::{
     crypto,
-    socks::handle_connection,
+    socks::{handle_connection, AuthInfo},
     tcp::{self},
 };
 
@@ -17,6 +17,7 @@ pub struct Proxy {
     remote_addr: Option<String>,
     local_opts: Vec<bool>,
     remote_opt: bool,
+    auth_info: Option<AuthInfo>,
 }
 
 impl Proxy {
@@ -25,12 +26,14 @@ impl Proxy {
         remote_addr: Option<String>,
         local_opts: Vec<bool>,
         remote_opt: bool,
+        auth_info: Option<AuthInfo>,
     ) -> Self {
         Self {
             local_addrs,
             remote_addr,
             local_opts,
             remote_opt,
+            auth_info,
         }
     }
 
@@ -54,16 +57,19 @@ impl Proxy {
             false => None,
         });
 
+        let auth_info = Arc::new(self.auth_info.clone());
+
         loop {
             let (stream, addr) = listener.accept().await?;
             info!("Accept connection from {}", addr);
 
             let acceptor = acceptor.clone();
+            let auth_info = auth_info.clone();
 
             tokio::spawn(async move {
                 let stream = tcp::NetStream::from_acceptor(stream, acceptor).await;
 
-                if let Err(e) = handle_connection(stream).await {
+                if let Err(e) = handle_connection(stream, auth_info.as_ref()).await {
                     error!("Failed to handle connection: {}", e);
                 }
             });
@@ -78,6 +84,8 @@ impl Proxy {
             false => None,
         });
 
+        let auth_info = Arc::new(self.auth_info.clone());
+
         // limit the number of concurrent connections
         let semaphore = Arc::new(tokio::sync::Semaphore::new(32));
 
@@ -88,11 +96,12 @@ impl Proxy {
             info!("Connect to remote {} success", stream.peer_addr()?);
 
             let connector = connector.clone();
+            let auth_info = auth_info.clone();
 
             tokio::spawn(async move {
                 let stream = tcp::NetStream::from_connector(stream, connector).await;
 
-                if let Err(e) = handle_connection(stream).await {
+                if let Err(e) = handle_connection(stream, auth_info.as_ref()).await {
                     error!("Failed to handle connection: {}", e);
                 }
 

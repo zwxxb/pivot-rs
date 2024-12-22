@@ -49,6 +49,10 @@ pub enum Commands {
         /// Reverse server address, format: [+]IP:PORT
         #[arg(short, long)]
         remote: Option<String>,
+
+        /// Authentication info, format: user:pass
+        #[arg(short, long)]
+        auth: Option<String>,
     },
 }
 
@@ -79,7 +83,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             let forward = Forward::new(local, remote, local_opts, remote_opts, socket, udp);
             forward.start().await?;
         }
-        Commands::Socks { mut local, remote } => {
+        Commands::Socks {
+            mut local,
+            remote,
+            auth,
+        } => {
             info!("Starting proxy mode");
 
             let mut local_opts = Vec::new();
@@ -98,7 +106,12 @@ pub async fn run(cli: Cli) -> Result<()> {
                 None => None,
             };
 
-            let proxy = Proxy::new(local, remote, local_opts, remote_opt);
+            let auth_info = match auth {
+                Some(auth) => Some(socks::AuthInfo::new(auth)),
+                None => None,
+            };
+
+            let proxy = Proxy::new(local, remote, local_opts, remote_opt, auth_info);
             proxy.start().await?;
         }
     }

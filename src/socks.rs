@@ -7,7 +7,24 @@ use tokio::{
 
 use crate::tcp::{self, NetStream};
 
-pub async fn handle_connection(stream: NetStream) -> Result<()> {
+#[derive(Clone)]
+pub struct AuthInfo {
+    pub user: String,
+    pub pass: String,
+}
+
+impl AuthInfo {
+    pub fn new(s: String) -> Self {
+        let (user, pass) = s.split_once(':').unwrap();
+
+        Self {
+            user: user.to_string(),
+            pass: pass.to_string(),
+        }
+    }
+}
+
+pub async fn handle_connection(stream: NetStream, auth_info: &Option<AuthInfo>) -> Result<()> {
     let (mut reader, mut writer) = stream.split();
 
     // 1. auth negotiation
@@ -25,8 +42,57 @@ pub async fn handle_connection(stream: NetStream) -> Result<()> {
     let mut methods = vec![0u8; nmethods];
     reader.read_exact(&mut methods).await?;
 
-    // no auth needed
-    writer.write_all(&[0x05, 0x00]).await?;
+    match auth_info {
+        Some(auth) => {
+            // check username and password authentication
+            if !methods.contains(&0x02) {
+                writer.write_all(&[0x05, 0xff]).await?;
+                return Err(Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "No supported authentication method",
+                ));
+            }
+
+            writer.write_all(&[0x05, 0x02]).await?;
+
+            let mut auth_buf = [0u8; 2];
+            reader.read_exact(&mut auth_buf).await?;
+
+            if auth_buf[0] != 0x01 {
+                return Err(Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Invalid authentication version",
+                ));
+            }
+
+            // read username
+            let ulen = auth_buf[1] as usize;
+            let mut username = vec![0u8; ulen];
+            reader.read_exact(&mut username).await?;
+
+            // read password
+            let plen = reader.read_u8().await? as usize;
+            let mut password = vec![0u8; plen];
+            reader.read_exact(&mut password).await?;
+
+            // check username and password
+            if String::from_utf8_lossy(&username) == auth.user
+                && String::from_utf8_lossy(&password) == auth.pass
+            {
+                writer.write_all(&[0x01, 0x00]).await?;
+            } else {
+                writer.write_all(&[0x01, 0x01]).await?;
+                return Err(Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Authentication failed",
+                ));
+            }
+        }
+        None => {
+            // no auth required
+            writer.write_all(&[0x05, 0x00]).await?;
+        }
+    }
 
     // 2. handle request
     let mut header = [0u8; 4];
