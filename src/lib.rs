@@ -3,6 +3,7 @@ use std::io::Result;
 use clap::{Parser, Subcommand};
 use forward::Forward;
 use proxy::Proxy;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use tracing::info;
 
 pub mod crypto;
@@ -136,4 +137,12 @@ pub fn format_addrs(addrs: &mut Vec<String>) {
             *addr = "0.0.0.0:".to_string() + addr;
         }
     }
+}
+
+pub fn generate_random_string(length: usize) -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(length)
+        .map(char::from)
+        .collect()
 }

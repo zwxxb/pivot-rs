@@ -4,8 +4,12 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
+use tracing::info;
 
-use crate::tcp::{self, NetStream};
+use crate::{
+    generate_random_string,
+    tcp::{self, NetStream},
+};
 
 #[derive(Clone)]
 pub struct AuthInfo {
@@ -15,12 +19,17 @@ pub struct AuthInfo {
 
 impl AuthInfo {
     pub fn new(s: String) -> Self {
-        let (user, pass) = s.split_once(':').unwrap();
+        let (user, pass) = match s.contains(':') {
+            true => {
+                let (r1, r2) = s.split_once(':').unwrap();
+                (r1.to_string(), r2.to_string())
+            }
+            false => (generate_random_string(12), generate_random_string(12)),
+        };
 
-        Self {
-            user: user.to_string(),
-            pass: pass.to_string(),
-        }
+        info!("user: {} pass: {}", user, pass);
+
+        Self { user, pass }
     }
 }
 
