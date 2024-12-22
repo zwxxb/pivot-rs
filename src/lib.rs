@@ -3,6 +3,7 @@ use std::io::Result;
 use clap::{Parser, Subcommand};
 use forward::Forward;
 use proxy::Proxy;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use tracing::info;
 
 pub mod crypto;
@@ -49,6 +50,10 @@ pub enum Commands {
         /// Reverse server address, format: [+]IP:PORT
         #[arg(short, long)]
         remote: Option<String>,
+
+        /// Authentication info, format: user:pass (other for random)
+        #[arg(short, long)]
+        auth: Option<String>,
     },
 }
 
@@ -79,7 +84,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             let forward = Forward::new(local, remote, local_opts, remote_opts, socket, udp);
             forward.start().await?;
         }
-        Commands::Socks { mut local, remote } => {
+        Commands::Socks {
+            mut local,
+            remote,
+            auth,
+        } => {
             info!("Starting proxy mode");
 
             let mut local_opts = Vec::new();
@@ -98,7 +107,12 @@ pub async fn run(cli: Cli) -> Result<()> {
                 None => None,
             };
 
-            let proxy = Proxy::new(local, remote, local_opts, remote_opt);
+            let auth_info = match auth {
+                Some(auth) => Some(socks::AuthInfo::new(auth)),
+                None => None,
+            };
+
+            let proxy = Proxy::new(local, remote, local_opts, remote_opt, auth_info);
             proxy.start().await?;
         }
     }
@@ -123,4 +137,12 @@ pub fn format_addrs(addrs: &mut Vec<String>) {
             *addr = "0.0.0.0:".to_string() + addr;
         }
     }
+}
+
+pub fn generate_random_string(length: usize) -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(length)
+        .map(char::from)
+        .collect()
 }
