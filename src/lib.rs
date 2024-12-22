@@ -51,7 +51,7 @@ pub enum Commands {
         #[arg(short, long)]
         remote: Option<String>,
 
-        /// Authentication info, format: user:pass
+        /// Authentication info, format: user:pass (other for random)
         #[arg(short, long)]
         auth: Option<String>,
     },

@@ -18,9 +18,61 @@ cargo build --release
 - Unix domain socket forwarding (e.g. `/var/run/docker.sock`)
 - Multi network layer support
 - TLS encryption support
-- Socks5 proxy
+- Socks5 proxy (no/with authentication)
 
 ## Usage
+
+Rsproxy has two modes: port forwarding mode and socks proxy mode, corresponding to the `fwd` and `socks` parameters respectively.
+
+```bash
+$ ./rsproxy -h
+
+Rsproxy: Port-Forwarding and Proxy Tool
+
+Usage: rsproxy <COMMAND>
+
+Commands:
+  fwd    Port forwarding mode
+  socks  Socks proxy mode
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+Port forwarding mode.
+
+```bash
+$ ./rsproxy fwd -h
+
+Port forwarding mode
+
+Usage: rsproxy fwd [OPTIONS]
+
+Options:
+  -l, --local <LOCAL>    Local listen address, format: [+][IP:]PORT
+  -r, --remote <REMOTE>  Remote connect address, format: [+]IP:PORT
+  -s, --socket <SOCKET>  Unix domain socket path
+  -u, --udp              Enable UDP forward mode
+  -h, --help             Print help
+```
+
+Socks proxy mode.
+
+```bash
+$ ./rsproxy socks -h
+
+Socks proxy mode
+
+Usage: rsproxy socks [OPTIONS]
+
+Options:
+  -l, --local <LOCAL>    Local listen address, format: [+][IP:]PORT
+  -r, --remote <REMOTE>  Reverse server address, format: [+]IP:PORT
+  -a, --auth <AUTH>      Authentication info, format: user:pass
+  -h, --help             Print help
+```
 
 ### TCP Port Forwarding
 
@@ -145,7 +197,7 @@ curl http://vps:5555/version
 
 ### Socks Proxy
 
-Rsproxy supports socks5 protocol (no authentication)
+Rsproxy supports socks5 protocol (no/with authentication)
 
 Forward socks proxy.
 
@@ -163,6 +215,20 @@ Reverse socks proxy.
 ./rsproxy socks -r vps:7777
 
 # now attacker can use socks proxy on vps:8888
+```
+
+To enable authentication, simply add `user:pass` after the `-a` flag.
+
+```bash
+./rsproxy socks -l 1080 -a user:pass
+```
+
+Rsproxy will generate a random username and password if you pass a string to `-a` flag which does not have the `user:pass` format.
+
+```bash
+./rsproxy socks -l 1080 -a rand
+
+# the random username and password will be output to the console
 ```
 
 ### TLS Encryption
