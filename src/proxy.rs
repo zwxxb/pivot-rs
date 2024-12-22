@@ -1,6 +1,9 @@
 use std::{io::Result, sync::Arc};
 
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    join,
+    net::{TcpListener, TcpStream},
+};
 use tracing::{error, info};
 
 use crate::{
@@ -75,25 +78,27 @@ impl Proxy {
             false => None,
         });
 
+        // limit the number of concurrent connections
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(32));
+
         loop {
-            match TcpStream::connect(&remote_addr).await {
-                Ok(stream) => {
-                    info!("Connect to remote {} success", stream.peer_addr()?);
-                    let connector = connector.clone();
+            let permit = semaphore.clone().acquire_owned().await;
 
-                    tokio::spawn(async move {
-                        let stream = tcp::NetStream::from_connector(stream, connector).await;
+            let stream = TcpStream::connect(&remote_addr).await?;
+            info!("Connect to remote {} success", stream.peer_addr()?);
 
-                        if let Err(e) = handle_connection(stream).await {
-                            error!("Failed to handle connection: {}", e);
-                        }
-                    });
+            let connector = connector.clone();
+
+            tokio::spawn(async move {
+                let stream = tcp::NetStream::from_connector(stream, connector).await;
+
+                if let Err(e) = handle_connection(stream).await {
+                    error!("Failed to handle connection: {}", e);
                 }
-                Err(e) => {
-                    error!("Failed to establish connection: {}", e);
-                    continue;
-                }
-            }
+
+                // drop the permit to release the semaphore
+                drop(permit);
+            });
         }
     }
 
@@ -115,8 +120,10 @@ impl Proxy {
         });
 
         loop {
-            let (proxy_stream, proxy_addr) = proxy_listener.accept().await?;
-            let (control_stream, control_addr) = control_listener.accept().await?;
+            let (r1, r2) = join!(proxy_listener.accept(), control_listener.accept());
+
+            let (proxy_stream, proxy_addr) = r1?;
+            let (control_stream, control_addr) = r2?;
 
             info!("Accept connection from {}", proxy_addr);
             info!("Accept connection from {}", control_addr);
@@ -130,9 +137,11 @@ impl Proxy {
                 let control_stream =
                     tcp::NetStream::from_acceptor(control_stream, control_acceptor).await;
 
+                info!("Open pipe: {} <=> {}", proxy_addr, control_addr);
                 if let Err(e) = tcp::handle_forward(proxy_stream, control_stream).await {
                     error!("Failed to handle forward: {}", e);
                 }
+                info!("Close pipe: {} <=> {}", proxy_addr, control_addr);
             });
         }
     }
