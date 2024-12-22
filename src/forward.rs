@@ -12,10 +12,10 @@ use crate::{crypto, tcp, udp};
 pub struct Forward {
     local_addrs: Vec<String>,
     remote_addrs: Vec<String>,
-    socket: Option<String>,
-    udp: bool,
     local_opts: Vec<bool>,
     remote_opts: Vec<bool>,
+    socket: Option<String>,
+    udp: bool,
 }
 
 impl Forward {
@@ -246,24 +246,40 @@ impl Forward {
             false => None,
         });
 
+        // limit the number of concurrent connections
+        let semaphore = Arc::new(sync::Semaphore::new(32));
+
         loop {
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+
             let unix_addr = self.socket.clone().unwrap();
             let remote_addr = self.remote_addrs[0].clone();
 
-            let unix_stream = UnixStream::connect(&unix_addr).await?;
-            let remote_stream = TcpStream::connect(&remote_addr).await?;
+            let (r1, r2) = join!(
+                UnixStream::connect(&unix_addr),
+                TcpStream::connect(&remote_addr)
+            );
+
+            let (unix_stream, remote_stream) = (r1?, r2?);
 
             info!("Connect to {} success", unix_addr);
             info!("Connect to {} success", remote_addr);
 
             let connector = connector.clone();
 
-            let unix_stream = tcp::NetStream::Unix(unix_stream);
-            let remote_stream = tcp::NetStream::from_connector(remote_stream, connector).await;
+            tokio::spawn(async move {
+                let unix_stream = tcp::NetStream::Unix(unix_stream);
+                let remote_stream = tcp::NetStream::from_connector(remote_stream, connector).await;
 
-            info!("Open pipe: {} <=> {}", unix_addr, remote_addr);
-            tcp::handle_forward(unix_stream, remote_stream).await?;
-            info!("Close pipe: {} <=> {}", unix_addr, remote_addr);
+                info!("Open pipe: {} <=> {}", unix_addr, remote_addr);
+                if let Err(e) = tcp::handle_forward(unix_stream, remote_stream).await {
+                    error!("Failed to forward: {}", e)
+                }
+                info!("Close pipe: {} <=> {}", unix_addr, remote_addr);
+
+                // drop the permit to release the semaphore
+                drop(permit);
+            });
         }
     }
 
