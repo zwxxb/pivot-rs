@@ -134,10 +134,10 @@ impl Forward {
         });
 
         loop {
-            let (client, client_addr) = listener.accept().await?;
-            let remote = TcpStream::connect(&self.remote_addrs[0]).await?;
+            let (client_stream, client_addr) = listener.accept().await?;
+            let remote_stream = TcpStream::connect(&self.remote_addrs[0]).await?;
 
-            let remote_addr = remote.peer_addr()?;
+            let remote_addr = remote_stream.peer_addr()?;
 
             info!("Accept connection from {}", client_addr);
             info!("Connect to {} success", remote_addr);
@@ -146,11 +146,11 @@ impl Forward {
             let connector = connector.clone();
 
             tokio::spawn(async move {
-                let client = tcp::NetStream::from_acceptor(client, acceptor).await;
-                let remote = tcp::NetStream::from_connector(remote, connector).await;
+                let client_stream = tcp::NetStream::from_acceptor(client_stream, acceptor).await;
+                let remote_stream = tcp::NetStream::from_connector(remote_stream, connector).await;
 
                 info!("Open pipe: {} <=> {}", client_addr, remote_addr);
-                if let Err(e) = tcp::handle_forward(client, remote).await {
+                if let Err(e) = tcp::handle_forward(client_stream, remote_stream).await {
                     error!("failed to forward: {}", e)
                 }
                 info!("Close pipe: {} <=> {}", client_addr, remote_addr);
@@ -219,7 +219,7 @@ impl Forward {
         loop {
             let unix_addr = self.socket.clone().unwrap();
 
-            let (local_stream, client_addr) = local_listener.accept().await?;
+            let (client_stream, client_addr) = local_listener.accept().await?;
             let unix_stream = UnixStream::connect(&unix_addr).await?;
 
             info!("Accept connection from {}", client_addr);
@@ -228,11 +228,11 @@ impl Forward {
             let acceptor = acceptor.clone();
 
             tokio::spawn(async move {
-                let local_stream = tcp::NetStream::from_acceptor(local_stream, acceptor).await;
+                let client_stream = tcp::NetStream::from_acceptor(client_stream, acceptor).await;
                 let unix_stream = tcp::NetStream::Unix(unix_stream);
 
                 info!("Open pipe: {} <=> {}", unix_addr, client_addr);
-                if let Err(e) = tcp::handle_forward(unix_stream, local_stream).await {
+                if let Err(e) = tcp::handle_forward(client_stream, unix_stream).await {
                     error!("Failed to forward: {}", e)
                 }
                 info!("Close pipe: {} <=> {}", unix_addr, client_addr);
