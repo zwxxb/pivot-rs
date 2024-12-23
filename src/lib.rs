@@ -14,7 +14,7 @@ pub mod tcp;
 pub mod udp;
 
 #[derive(Parser)]
-#[command(author, version, about = "Rsproxy: Port-Forwarding and Proxy Tool")]
+#[command(author, version, about = "Pivot: Port-Forwarding and Proxy Tool")]
 pub struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -42,7 +42,7 @@ pub enum Commands {
     },
 
     /// Socks proxy mode
-    Socks {
+    Proxy {
         /// Local listen address, format: [+][IP:]PORT
         #[arg(short, long)]
         local: Vec<String>,
@@ -84,7 +84,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             let forward = Forward::new(local, remote, local_opts, remote_opts, socket, udp);
             forward.start().await?;
         }
-        Commands::Socks {
+        Commands::Proxy {
             mut local,
             remote,
             auth,
