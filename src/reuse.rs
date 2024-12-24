@@ -29,6 +29,10 @@ impl Reuse {
     }
 
     pub async fn start(&self) -> Result<()> {
+        self.reuse_tcp().await
+    }
+
+    async fn reuse_tcp(&self) -> Result<()> {
         let local_addr: SocketAddr = self.local_addr.parse().unwrap();
 
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
