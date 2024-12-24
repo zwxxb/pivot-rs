@@ -3,16 +3,16 @@ use std::sync::Arc;
 
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::{
-    io,
-    net::{TcpStream, UnixStream},
-    select,
-};
+use tokio::{io, net::TcpStream, select};
 use tokio_rustls::{client, server, TlsAcceptor, TlsConnector};
 use tracing::error;
 
+#[cfg(target_family = "unix")]
+use tokio::net::UnixStream;
+
 pub enum NetStream {
     Tcp(TcpStream),
+    #[cfg(target_family = "unix")]
     Unix(UnixStream),
     ServerTls(server::TlsStream<TcpStream>),
     ClientTls(client::TlsStream<TcpStream>),
@@ -49,6 +49,7 @@ impl NetStream {
                 let (r, w) = io::split(stream);
                 (Box::new(r), Box::new(w))
             }
+            #[cfg(target_family = "unix")]
             NetStream::Unix(stream) => {
                 let (r, w) = io::split(stream);
                 (Box::new(r), Box::new(w))

