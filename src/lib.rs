@@ -3,7 +3,6 @@ use std::io::Result;
 use clap::{Parser, Subcommand};
 use forward::Forward;
 use proxy::Proxy;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use reuse::Reuse;
 use tracing::info;
 
@@ -14,6 +13,7 @@ pub mod reuse;
 pub mod socks;
 pub mod tcp;
 pub mod udp;
+pub mod util;
 
 #[derive(Parser)]
 #[command(author, version, about = "Pivot: Port-Forwarding and Proxy Tool")]
@@ -82,8 +82,8 @@ pub enum Commands {
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Fwd {
-            mut local,
-            mut remote,
+            local,
+            remote,
             #[cfg(target_family = "unix")]
             socket,
             udp,
@@ -96,17 +96,22 @@ pub async fn run(cli: Cli) -> Result<()> {
                 info!("Using TCP protocol");
             }
 
-            let mut local_opts = Vec::new();
-            let mut remote_opts = Vec::new();
+            let local_addrs = local
+                .iter()
+                .map(|addr| addr.replace("+", ""))
+                .map(|addr| match addr.contains(':') {
+                    true => addr,
+                    false => format!("0.0.0.0:{}", addr),
+                })
+                .collect();
+            let remote_addrs = remote.iter().map(|addr| addr.replace("+", "")).collect();
 
-            load_opts(&mut local, &mut local_opts);
-            load_opts(&mut remote, &mut remote_opts);
-
-            format_addrs(&mut local);
+            let local_opts = local.iter().map(|addr| addr.starts_with('+')).collect();
+            let remote_opts = remote.iter().map(|addr| addr.starts_with('+')).collect();
 
             let forward = Forward::new(
-                local,
-                remote,
+                local_addrs,
+                remote_addrs,
                 local_opts,
                 remote_opts,
                 #[cfg(target_family = "unix")]
@@ -117,34 +122,28 @@ pub async fn run(cli: Cli) -> Result<()> {
             forward.start().await?;
         }
         Commands::Proxy {
-            mut local,
+            local,
             remote,
             auth,
         } => {
             info!("Starting proxy mode");
 
-            let mut local_opts = Vec::new();
-            let mut remote_opt = false;
+            let local_addrs = local
+                .iter()
+                .map(|addr| addr.replace("+", ""))
+                .map(|addr| match addr.contains(':') {
+                    true => addr,
+                    false => format!("0.0.0.0:{}", addr),
+                })
+                .collect();
+            let local_opts = local.iter().map(|addr| addr.starts_with('+')).collect();
 
-            load_opts(&mut local, &mut local_opts);
-            format_addrs(&mut local);
+            let remote_addr = remote.as_ref().map(|addr| addr.replace("+", ""));
+            let remote_opt = remote.is_some_and(|addr| addr.starts_with('+'));
 
-            let remote = match remote {
-                Some(remote) => Some(if remote.starts_with('+') {
-                    remote_opt = true;
-                    remote.replace("+", "")
-                } else {
-                    remote
-                }),
-                None => None,
-            };
+            let auth_info = auth.map(|v| socks::AuthInfo::new(v));
 
-            let auth_info = match auth {
-                Some(auth) => Some(socks::AuthInfo::new(auth)),
-                None => None,
-            };
-
-            let proxy = Proxy::new(local, remote, local_opts, remote_opt, auth_info);
+            let proxy = Proxy::new(local_addrs, remote_addr, local_opts, remote_opt, auth_info);
             proxy.start().await?;
         }
         Commands::Reuse {
@@ -153,37 +152,12 @@ pub async fn run(cli: Cli) -> Result<()> {
             fallback,
             external,
         } => {
+            info!("Starting reuse mode");
+
             let reuse = Reuse::new(local, remote, fallback, external);
             reuse.start().await?;
         }
     }
 
     Ok(())
-}
-
-pub fn load_opts(addrs: &mut Vec<String>, opts: &mut Vec<bool>) {
-    for addr in addrs {
-        if addr.starts_with('+') {
-            *addr = addr.replace("+", "");
-            opts.push(true);
-        } else {
-            opts.push(false);
-        }
-    }
-}
-
-pub fn format_addrs(addrs: &mut Vec<String>) {
-    for addr in addrs {
-        if !addr.contains(":") {
-            *addr = "0.0.0.0:".to_string() + addr;
-        }
-    }
-}
-
-pub fn generate_random_string(length: usize) -> String {
-    thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(length)
-        .map(char::from)
-        .collect()
 }

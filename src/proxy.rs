@@ -48,14 +48,12 @@ impl Proxy {
         Ok(())
     }
 
-    pub async fn socks_server(&self) -> Result<()> {
+    async fn socks_server(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Start socks server on {}", listener.local_addr()?);
 
-        let acceptor = Arc::new(match self.local_opts[0] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
-            false => None,
-        });
+        let acceptor =
+            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
 
         let auth_info = Arc::new(self.auth_info.clone());
 
@@ -76,13 +74,10 @@ impl Proxy {
         }
     }
 
-    pub async fn socks_reverse_client(&self) -> Result<()> {
+    async fn socks_reverse_client(&self) -> Result<()> {
         let remote_addr = self.remote_addr.clone().unwrap();
 
-        let connector = Arc::new(match self.remote_opt {
-            true => Some(crypto::get_tls_connector()),
-            false => None,
-        });
+        let connector = Arc::new(self.remote_opt.then_some(crypto::get_tls_connector()));
 
         let auth_info = Arc::new(self.auth_info.clone());
 
@@ -111,22 +106,17 @@ impl Proxy {
         }
     }
 
-    pub async fn socks_reverse_server(&self) -> Result<()> {
+    async fn socks_reverse_server(&self) -> Result<()> {
         let control_listener = TcpListener::bind(&self.local_addrs[0]).await?;
         let proxy_listener = TcpListener::bind(&self.local_addrs[1]).await?;
 
         info!("Bind to {} success", control_listener.local_addr()?);
         info!("Bind to {} success", proxy_listener.local_addr()?);
 
-        let control_acceptor = Arc::new(match self.local_opts[0] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
-            false => None,
-        });
-
-        let proxy_acceptor = Arc::new(match self.local_opts[1] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[1])),
-            false => None,
-        });
+        let control_acceptor =
+            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
+        let proxy_acceptor =
+            Arc::new(self.local_opts[1].then_some(crypto::get_tls_acceptor(&self.local_addrs[1])));
 
         loop {
             let (r1, r2) = join!(proxy_listener.accept(), control_listener.accept());

@@ -7,24 +7,26 @@ use tokio::{
 use tracing::info;
 
 use crate::{
-    generate_random_string,
     tcp::{self, NetStream},
+    util,
 };
 
 #[derive(Clone)]
 pub struct AuthInfo {
-    pub user: String,
-    pub pass: String,
+    user: String,
+    pass: String,
 }
 
 impl AuthInfo {
     pub fn new(s: String) -> Self {
-        let (user, pass) = match s.contains(':') {
-            true => {
-                let (r1, r2) = s.split_once(':').unwrap();
-                (r1.to_string(), r2.to_string())
-            }
-            false => (generate_random_string(12), generate_random_string(12)),
+        let (user, pass) = if s.contains(':') {
+            let (r1, r2) = s.split_once(':').unwrap();
+            (r1.to_string(), r2.to_string())
+        } else {
+            (
+                util::generate_random_string(12),
+                util::generate_random_string(12),
+            )
         };
 
         info!("user: {} pass: {}", user, pass);

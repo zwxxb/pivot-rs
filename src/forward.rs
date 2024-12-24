@@ -99,15 +99,10 @@ impl Forward {
         info!("Bind to {} success", listener1.local_addr()?);
         info!("Bind to {} success", listener1.local_addr()?);
 
-        let acceptor1 = Arc::new(match self.local_opts[0] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
-            false => None,
-        });
-
-        let acceptor2 = Arc::new(match self.local_opts[1] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[1])),
-            false => None,
-        });
+        let acceptor1 =
+            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
+        let acceptor2 =
+            Arc::new(self.local_opts[1].then_some(crypto::get_tls_acceptor(&self.local_addrs[1])));
 
         loop {
             let (r1, r2) = join!(listener1.accept(), listener2.accept());
@@ -138,15 +133,10 @@ impl Forward {
         let listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Bind to {} success", listener.local_addr()?);
 
-        let acceptor = Arc::new(match self.local_opts[0] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
-            false => None,
-        });
+        let acceptor =
+            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
 
-        let connector = Arc::new(match self.remote_opts[0] {
-            true => Some(crypto::get_tls_connector()),
-            false => None,
-        });
+        let connector = Arc::new(self.remote_opts[0].then_some(crypto::get_tls_connector()));
 
         loop {
             let (client_stream, client_addr) = listener.accept().await?;
@@ -174,15 +164,8 @@ impl Forward {
     }
 
     async fn remote_to_remote_tcp(&self) -> Result<()> {
-        let connector1 = Arc::new(match self.remote_opts[0] {
-            true => Some(crypto::get_tls_connector()),
-            false => None,
-        });
-
-        let connector2 = Arc::new(match self.remote_opts[1] {
-            true => Some(crypto::get_tls_connector()),
-            false => None,
-        });
+        let connector1 = Arc::new(self.remote_opts[0].then_some(crypto::get_tls_connector()));
+        let connector2 = Arc::new(self.remote_opts[1].then_some(crypto::get_tls_connector()));
 
         // limit the number of concurrent connections
         let semaphore = Arc::new(sync::Semaphore::new(32));
@@ -227,10 +210,8 @@ impl Forward {
         let local_listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Bind to {} success", local_listener.local_addr()?);
 
-        let acceptor = Arc::new(match self.local_opts[0] {
-            true => Some(crypto::get_tls_acceptor(&self.local_addrs[0])),
-            false => None,
-        });
+        let acceptor =
+            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
 
         loop {
             let unix_addr = self.socket.clone().unwrap();
@@ -258,10 +239,7 @@ impl Forward {
 
     #[cfg(target_family = "unix")]
     async fn socket_to_remote_tcp(&self) -> Result<()> {
-        let connector = Arc::new(match self.remote_opts[0] {
-            true => Some(crypto::get_tls_connector()),
-            false => None,
-        });
+        let connector = Arc::new(self.remote_opts[0].then_some(crypto::get_tls_connector()));
 
         // limit the number of concurrent connections
         let semaphore = Arc::new(sync::Semaphore::new(32));
