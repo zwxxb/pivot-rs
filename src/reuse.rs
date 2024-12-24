@@ -33,7 +33,10 @@ impl Reuse {
 
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
         socket.set_reuse_address(true)?;
+
+        #[cfg(target_family = "unix")]
         socket.set_reuse_port(true)?;
+
         socket.set_nonblocking(true)?;
         socket.bind(&local_addr.into())?;
         socket.listen(128)?;

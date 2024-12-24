@@ -2,10 +2,13 @@ use std::{io::Result, sync::Arc};
 
 use tokio::{
     join,
-    net::{TcpListener, TcpStream, UdpSocket, UnixStream},
+    net::{TcpListener, TcpStream, UdpSocket},
     sync,
 };
 use tracing::{error, info};
+
+#[cfg(target_family = "unix")]
+use tokio::net::UnixStream;
 
 use crate::{crypto, tcp, udp};
 
@@ -14,6 +17,7 @@ pub struct Forward {
     remote_addrs: Vec<String>,
     local_opts: Vec<bool>,
     remote_opts: Vec<bool>,
+    #[cfg(target_family = "unix")]
     socket: Option<String>,
     udp: bool,
 }
@@ -24,7 +28,7 @@ impl Forward {
         remote_addrs: Vec<String>,
         local_opts: Vec<bool>,
         remote_opts: Vec<bool>,
-        socket: Option<String>,
+        #[cfg(target_family = "unix")] socket: Option<String>,
         udp: bool,
     ) -> Self {
         Self {
@@ -32,12 +36,14 @@ impl Forward {
             remote_addrs,
             local_opts,
             remote_opts,
+            #[cfg(target_family = "unix")]
             socket,
             udp,
         }
     }
 
     pub async fn start(&self) -> Result<()> {
+        #[cfg(target_family = "unix")]
         match (
             self.local_addrs.len(),
             self.remote_addrs.len(),
@@ -50,6 +56,15 @@ impl Forward {
             (0, 1, Some(_)) => self.socket_to_remote_tcp().await?,
             _ => error!("Invalid forward parameters"),
         }
+
+        #[cfg(target_family = "windows")]
+        match (self.local_addrs.len(), self.remote_addrs.len()) {
+            (2, 0) => self.local_to_local().await?,
+            (1, 1) => self.local_to_remote().await?,
+            (0, 2) => self.remote_to_remote().await?,
+            _ => error!("Invalid forward parameters"),
+        }
+
         Ok(())
     }
 
@@ -207,6 +222,7 @@ impl Forward {
         }
     }
 
+    #[cfg(target_family = "unix")]
     async fn socket_to_local_tcp(&self) -> Result<()> {
         let local_listener = TcpListener::bind(&self.local_addrs[0]).await?;
         info!("Bind to {} success", local_listener.local_addr()?);
@@ -240,6 +256,7 @@ impl Forward {
         }
     }
 
+    #[cfg(target_family = "unix")]
     async fn socket_to_remote_tcp(&self) -> Result<()> {
         let connector = Arc::new(match self.remote_opts[0] {
             true => Some(crypto::get_tls_connector()),

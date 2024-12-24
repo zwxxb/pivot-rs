@@ -35,6 +35,7 @@ pub enum Commands {
         remote: Vec<String>,
 
         /// Unix domain socket path
+        #[cfg(target_family = "unix")]
         #[arg(short, long)]
         socket: Option<String>,
 
@@ -83,6 +84,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Commands::Fwd {
             mut local,
             mut remote,
+            #[cfg(target_family = "unix")]
             socket,
             udp,
         } => {
@@ -102,7 +104,16 @@ pub async fn run(cli: Cli) -> Result<()> {
 
             format_addrs(&mut local);
 
-            let forward = Forward::new(local, remote, local_opts, remote_opts, socket, udp);
+            let forward = Forward::new(
+                local,
+                remote,
+                local_opts,
+                remote_opts,
+                #[cfg(target_family = "unix")]
+                socket,
+                udp,
+            );
+
             forward.start().await?;
         }
         Commands::Proxy {
