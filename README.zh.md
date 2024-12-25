@@ -85,13 +85,14 @@ $ ./pivot reuse -h
 
 Port reuse mode
 
-Usage: pivot reuse --local <LOCAL> --remote <REMOTE> --fallback <FALLBACK> --external <EXTERNAL>
+Usage: pivot reuse [OPTIONS] --local <LOCAL> --remote <REMOTE> --external <EXTERNAL>
 
 Options:
   -l, --local <LOCAL>        Local reuse IP address, format: IP:PORT
   -r, --remote <REMOTE>      Remote redirect IP address, format: IP:PORT
   -f, --fallback <FALLBACK>  Fallback IP address, format: IP:PORT
   -e, --external <EXTERNAL>  External IP address, format: IP
+  -t, --timeout <TIMEOUT>    Timeout to stop port reuse
   -h, --help                 Print help
 ```
 
@@ -329,6 +330,14 @@ TLS 加密支持 TCP 端口转发, Unix domain socket 转发和 Socks 代理.
 公网 IP 为 `1.2.3.4` 的攻击者会通过 `192.168.1.1:8000` 连接到 `10.0.0.1:22`, 正常用户则会 fallback 到 `127.0.0.1:8000` (防止影响 8000 端口上的正常业务)
 
 注意不建议复用 `0.0.0.0` 地址上的端口 (虽然有时候能用), 因为这会导致 fallback 地址直接没用了 (fallback 连接依然会走 `pivot-rs` 的端口复用流程, 一直循环, 最终 crash)
+
+有时候你可以不用指定 fallback 地址, 而是设置一个 timeout
+
+```bash
+./pivot reuse -l 192.168.1.1:8000 -r 10.0.0.1:22 -e 1.2.3.4 -t 10
+```
+
+这里的 timeout 代表在特定时间 (10s) 后停止端口复用, 但是已有的活动连接会被继续转发.
 
 ## 参考
 

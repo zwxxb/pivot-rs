@@ -85,13 +85,14 @@ $ ./pivot reuse -h
 
 Port reuse mode
 
-Usage: pivot reuse --local <LOCAL> --remote <REMOTE> --fallback <FALLBACK> --external <EXTERNAL>
+Usage: pivot reuse [OPTIONS] --local <LOCAL> --remote <REMOTE> --external <EXTERNAL>
 
 Options:
   -l, --local <LOCAL>        Local reuse IP address, format: IP:PORT
   -r, --remote <REMOTE>      Remote redirect IP address, format: IP:PORT
   -f, --fallback <FALLBACK>  Fallback IP address, format: IP:PORT
   -e, --external <EXTERNAL>  External IP address, format: IP
+  -t, --timeout <TIMEOUT>    Timeout to stop port reuse
   -h, --help                 Print help
 ```
 
@@ -329,6 +330,14 @@ For example, reuse the port 8000
 Attackers from external address `1.2.3.4` will connect to `10.0.0.1:22` through `192.168.1.1:8000`, the normal users will fallback to `127.0.0.1:8000` (prevent the service on port 8000 being affected)
 
 It is not recommended to reuse ports on `0.0.0.0` address although it may work in some cases, because it will make the fallback address useless (the fallback connection will be looped in `pivot-rs` and finally cause a crash)
+
+Sometimes the fallback address is not necessary, you can omit it and set a timeout.
+
+```bash
+./pivot reuse -l 192.168.1.1:8000 -r 10.0.0.1:22 -e 1.2.3.4 -t 10
+```
+
+The timeout means stopping the reuse listener after a specific time (10s), and continuing to forward the alive connections.
 
 ## Reference
 
