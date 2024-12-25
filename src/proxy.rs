@@ -53,7 +53,7 @@ impl Proxy {
         info!("Start socks server on {}", listener.local_addr()?);
 
         let acceptor =
-            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
+            Arc::new(self.local_opts[0].then(|| crypto::get_tls_acceptor(&self.local_addrs[0])));
 
         let auth_info = Arc::new(self.auth_info.clone());
 
@@ -77,7 +77,7 @@ impl Proxy {
     async fn socks_reverse_client(&self) -> Result<()> {
         let remote_addr = self.remote_addr.clone().unwrap();
 
-        let connector = Arc::new(self.remote_opt.then_some(crypto::get_tls_connector()));
+        let connector = Arc::new(self.remote_opt.then(|| crypto::get_tls_connector()));
 
         let auth_info = Arc::new(self.auth_info.clone());
 
@@ -114,9 +114,9 @@ impl Proxy {
         info!("Bind to {} success", proxy_listener.local_addr()?);
 
         let control_acceptor =
-            Arc::new(self.local_opts[0].then_some(crypto::get_tls_acceptor(&self.local_addrs[0])));
+            Arc::new(self.local_opts[0].then(|| crypto::get_tls_acceptor(&self.local_addrs[0])));
         let proxy_acceptor =
-            Arc::new(self.local_opts[1].then_some(crypto::get_tls_acceptor(&self.local_addrs[1])));
+            Arc::new(self.local_opts[1].then(|| crypto::get_tls_acceptor(&self.local_addrs[1])));
 
         loop {
             let (r1, r2) = join!(proxy_listener.accept(), control_listener.accept());
