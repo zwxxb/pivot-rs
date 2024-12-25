@@ -21,8 +21,13 @@ jobs:
     - name: Build project
       run: cargo build --release
 
+    - name: List target/release directory
+      run: ls -al ./target/release
+
     - name: Upload Release Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: pivot-rs
-        path: target/release/pivot-rs
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: target/release/pivot-rs
+        asset_name: pivot-rs
+        asset_content_type: application/octet-stream
