@@ -22,7 +22,9 @@ jobs:
       run: cargo build --release
 
     - name: Upload Release Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-release-asset@v1
       with:
-        name: release-artifact
-        path: target/release/
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: target/release/pivot-rs
+        asset_name: pivot-rs
+        asset_content_type: application/octet-stream
