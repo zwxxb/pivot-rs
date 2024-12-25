@@ -71,11 +71,15 @@ pub enum Commands {
 
         /// Fallback IP address, format: IP:PORT
         #[arg(short, long)]
-        fallback: Option<String>,  // Make fallback optional
+        fallback: Option<String>,
 
         /// External IP address, format: IP
         #[arg(short, long)]
         external: String,
+
+        /// Timeout to stop port reuse
+        #[arg(short, long)]
+        timeout: Option<u64>,
     },
 }
 
@@ -151,10 +155,11 @@ pub async fn run(cli: Cli) -> Result<()> {
             remote,
             fallback,
             external,
+            timeout,
         } => {
             info!("Starting reuse mode");
 
-            let reuse = Reuse::new(local, remote, fallback, external);
+            let reuse = Reuse::new(local, remote, fallback, external, timeout);
             reuse.start().await?;
         }
     }
